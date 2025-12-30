@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Face Detection Pipeline
 
 A complete face detection and tracking pipeline with re-identification capabilities using InsightFace and OpenCV.
@@ -200,3 +201,6 @@ MIT License - See LICENSE file for details
 - [InsightFace](https://github.com/deepinsight/insightface) for face detection models
 - [OpenCV](https://opencv.org/) for video processing
 - [FastAPI](https://fastapi.tiangolo.com/) for API framework
+=======
+# Deteccion_Facial
+>>>>>>> 18b1cbe79673e91ef442e571ed6ca7819ee46327
