@@ -17,6 +17,7 @@ from loguru import logger
 
 from ..config import load_settings
 from ..vision.detect import FaceDetector, FaceDet
+from ..vision.emotion import EmotionDetector
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -25,8 +26,16 @@ app = FastAPI(
     version="0.1.0",
 )
 
-# Global detector instance (initialized on startup)
+# Global detector instances (initialized on startup)
 detector: Optional[FaceDetector] = None
+emotion_detector: Optional[EmotionDetector] = None
+
+
+class EmotionResponse(BaseModel):
+    """Response model for emotion detection"""
+    dominant: str
+    confidence: float
+    all_emotions: dict[str, float]
 
 
 class FaceDetectionResponse(BaseModel):
@@ -35,6 +44,7 @@ class FaceDetectionResponse(BaseModel):
     confidence: float
     has_embedding: bool
     keypoints: Optional[List[List[float]]] = None
+    emotion: Optional[EmotionResponse] = None
 
 
 class DetectionResult(BaseModel):
@@ -47,8 +57,8 @@ class DetectionResult(BaseModel):
 
 @app.on_event("startup")
 async def startup_event():
-    """Initialize the face detector on startup"""
-    global detector
+    """Initialize the face detector and emotion detector on startup"""
+    global detector, emotion_detector
     try:
         settings = load_settings()
         detector = FaceDetector(
@@ -58,8 +68,13 @@ async def startup_event():
             use_gpu=settings.use_gpu,
         )
         logger.info("Face detector initialized successfully")
+        
+        # Initialize emotion detector if enabled
+        if settings.enable_emotion:
+            emotion_detector = EmotionDetector(backend=settings.emotion_backend)
+            logger.info("Emotion detector initialized successfully")
     except Exception as e:
-        logger.error(f"Failed to initialize face detector: {e}")
+        logger.error(f"Failed to initialize detectors: {e}")
         raise
 
 
@@ -108,14 +123,41 @@ async def detect_faces(file: UploadFile = File(...)):
         # Detect faces
         faces = detector.detect(image)
         
+        # Detect emotions if enabled
+        if emotion_detector is not None:
+            for face in faces:
+                try:
+                    x1, y1, x2, y2 = face.bbox_xyxy.astype(int)
+                    # Add padding for better emotion detection
+                    h, w = image.shape[:2]
+                    pad = 10
+                    x1, y1 = max(0, x1 - pad), max(0, y1 - pad)
+                    x2, y2 = min(w, x2 + pad), min(h, y2 + pad)
+                    face_crop = image[y1:y2, x1:x2]
+                    
+                    if face_crop.size > 0:
+                        emotion_result = emotion_detector.detect_emotion(face_crop)
+                        face.emotion = emotion_result
+                except Exception as e:
+                    logger.debug(f"Emotion detection failed: {e}")
+        
         # Convert to response format
         face_responses = []
         for face in faces:
+            emotion_resp = None
+            if face.emotion is not None:
+                emotion_resp = EmotionResponse(
+                    dominant=face.emotion.dominant_emotion,
+                    confidence=face.emotion.confidence,
+                    all_emotions=face.emotion.all_emotions
+                )
+            
             face_resp = FaceDetectionResponse(
                 bbox=face.bbox_xyxy.tolist(),
                 confidence=float(face.det_score),
                 has_embedding=face.embedding is not None,
                 keypoints=face.kps.tolist() if face.kps is not None else None,
+                emotion=emotion_resp
             )
             face_responses.append(face_resp)
         
@@ -157,6 +199,23 @@ async def detect_faces_annotated(file: UploadFile = File(...)):
         # Detect faces
         faces = detector.detect(image)
         
+        # Detect emotions if enabled
+        if emotion_detector is not None:
+            for face in faces:
+                try:
+                    x1, y1, x2, y2 = face.bbox_xyxy.astype(int)
+                    h, w = image.shape[:2]
+                    pad = 10
+                    x1_crop, y1_crop = max(0, x1 - pad), max(0, y1 - pad)
+                    x2_crop, y2_crop = min(w, x2 + pad), min(h, y2 + pad)
+                    face_crop = image[y1_crop:y2_crop, x1_crop:x2_crop]
+                    
+                    if face_crop.size > 0:
+                        emotion_result = emotion_detector.detect_emotion(face_crop)
+                        face.emotion = emotion_result
+                except Exception as e:
+                    logger.debug(f"Emotion detection failed: {e}")
+        
         # Draw bounding boxes
         for face in faces:
             x1, y1, x2, y2 = face.bbox_xyxy.astype(int).tolist()
@@ -168,8 +227,12 @@ async def detect_faces_annotated(file: UploadFile = File(...)):
                 for (px, py) in face.kps.astype(int):
                     cv2.circle(image, (px, py), 2, (0, 255, 255), -1)
             
-            # Add confidence label
-            label = f"{face.det_score:.2f}"
+            # Add confidence and emotion label
+            label_parts = [f"{face.det_score:.2f}"]
+            if face.emotion is not None:
+                label_parts.append(face.emotion.dominant_emotion)
+            label = " | ".join(label_parts)
+            
             cv2.putText(
                 image,
                 label,

@@ -28,6 +28,7 @@ class FaceDet:
     kps: Optional[np.ndarray]          # shape (5,2) si existe
     det_score: float
     embedding: Optional[np.ndarray]    # shape (512,) float32 L2-normalized
+    emotion: Optional['EmotionResult'] = None  # Emotion detection result
 
 
 class FaceDetector:

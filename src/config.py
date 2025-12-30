@@ -69,6 +69,12 @@ class Settings:
     reid_update_alpha: float
     reid_min_det_score: float
 
+    # Emotion detection
+    enable_emotion: bool
+    emotion_backend: str
+    save_results_json: bool
+    json_output_path: str
+
 
 def load_settings() -> Settings:
     video_source = _parse_video_source(os.getenv("VIDEO_SOURCE", "0"))
@@ -92,4 +98,8 @@ def load_settings() -> Settings:
         reid_similarity_thresh=_env_float("REID_SIM_THRESH", 0.45),
         reid_update_alpha=_env_float("REID_ALPHA", 0.9),
         reid_min_det_score=_env_float("REID_MIN_DET_SCORE", 0.65),
+        enable_emotion=_env_bool("ENABLE_EMOTION", True),
+        emotion_backend=os.getenv("EMOTION_BACKEND", "opencv"),
+        save_results_json=_env_bool("SAVE_RESULTS_JSON", True),
+        json_output_path=os.getenv("JSON_OUTPUT_PATH", "emotion_results.json"),
     )
